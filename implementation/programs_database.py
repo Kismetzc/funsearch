@@ -134,6 +134,26 @@ class ProgramsDatabase:
             self._best_score_per_island[island_id] = score
             logging.info('Best score of island %d increased to %s', island_id, score)
 
+        # --- 在这里加入检查和醒目打印 ---
+        best_fit_score_baseline = -212.0000000001 # 设置一个略高于 BF 的阈值，避免浮点数精度问题
+        current_best_score_on_island = self._best_score_per_island[island_id]
+
+        if score > self._best_score_per_island[island_id]:
+            self._best_program_per_island[island_id] = program
+            self._best_scores_per_test_per_island[island_id] = scores_per_test
+            self._best_score_per_island[island_id] = score
+            logging.info('Best score of island %d increased to %s', island_id, score)
+
+            # --- 关键的检查和打印逻辑 ---
+            if score > best_fit_score_baseline and current_best_score_on_island <= best_fit_score_baseline:
+                 # 只有当新分数 > BF 且之前的最佳分数 <= BF 时才打印（确保只在第一次突破时打印）
+                 print("\n" + "*"*20 + " BREAKTHROUGH ALERT " + "*"*20)
+                 print(f"Island {island_id}: Found new best score {score:.6f}, surpassing Best Fit ({best_fit_score_baseline:.6f})!")
+                 print(f"Sample Order: {kwargs.get('global_sample_nums', 'N/A')}")
+                 print("See registered function details above/below this message.")
+                 print("*"*62 + "\n")
+            # --- 结束关键逻辑 ---
+
         # ======== RZ: profiling ========
         profiler: profile.Profiler = kwargs.get('profiler', None)
         if profiler:
@@ -144,7 +164,7 @@ class ProgramsDatabase:
             program.global_sample_nums = global_sample_nums
             program.sample_time = sample_time
             program.evaluate_time = evaluate_time
-            profiler.register_function(program)
+            profiler.register_function(program) # Profiler 会打印函数的详细信息
 
     def register_program(
             self,
