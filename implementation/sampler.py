@@ -36,7 +36,7 @@ except ImportError as e:
          def __init__(self, *args, **kwargs): pass
          @abstractmethod
          def draw_samples(self, prompt: str) -> Collection[str]: pass
-         def _construct_prompt(self, code: str, island_id: Optional[int]) -> str: return code # Dummy method for AdvancedLLM check
+         def _construct_prompt(self, code: str, island_id: Optional[int] = None) -> str: return code # Dummy method for AdvancedLLM check
     class ProgramsDatabase: pass
     class Evaluator:
         def analyse(self, *args, **kwargs): pass
@@ -88,9 +88,7 @@ class LLM(ABC):
         # Note: This default implementation doesn't use temperature_override
         return [self._draw_sample(prompt) for _ in range(self.samples_per_prompt)]
 
-    # Add a dummy _construct_prompt for type checking if needed, especially for AdvancedLLM.
-    # Actual AdvancedLLM should implement this properly.
-    def _construct_prompt(self, code: str, island_id: Optional[int]) -> str:
+    def _construct_prompt(self, code: str, island_id: Optional[int] = None) -> str:
         """Placeholder for prompt construction, relevant for AdvancedLLM."""
         # BaselineLLM would just return code, AdvancedLLM would add context.
         logging.debug(f"LLM Base _construct_prompt called (island_id: {island_id}). Returning original code.")

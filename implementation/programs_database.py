@@ -503,3 +503,31 @@ def get_best_program_for_island(self, island_id: int) -> code_manipulation.Funct
     else:
         logging.warning(f"Attempted to get best program for invalid island_id: {island_id}")
         return None # 返回 None 表示无效 ID / Return None for invalid ID
+
+@funsearch.evolve
+def priority(item: float, bins: np.ndarray) -> np.ndarray:
+    """Returns priority with which we want to add item to each bin.
+
+    Args:
+        item: Size of item to be added to the bin.
+        bins: Array of capacities for each bin.
+
+    Return:
+        Array of same size as bins with priority score of each bin.
+    """
+    try:
+        # Convert input if needed
+        if not isinstance(bins, np.ndarray):
+            bins = np.array(bins, dtype=float)
+            
+        # Calculate remaining space (Best Fit strategy)
+        remaining_space = bins - item
+        
+        # Create scores (negative remaining space = Best Fit heuristic)
+        scores = -remaining_space
+        
+        # Handle any NaN/inf values
+        return np.nan_to_num(scores, nan=-1e9, posinf=-1e9, neginf=-1e9)
+    except Exception as e:
+        # Safe fallback that maintains shape
+        return np.full_like(bins, -1e9, dtype=float) if isinstance(bins, np.ndarray) else np.array([], dtype=float)
