@@ -320,133 +320,6 @@ class Island:
 
         # Format the names and docstrings of functions to be included in the prompt.
         versioned_functions: list[code_manipulation.Function] = []
-<<<<<<< HEAD
-        
-        # 如果没有之前的实现，创建一个基础模板函数
-        if not implementations:
-            # 获取模板中的原始函数作为基础
-            base_function = self._template.get_function(self._function_to_evolve)
-            if self._function_to_evolve == "priority":
-                # 为priority函数创建特殊的初始提示
-                header_docstring = (
-                    'Initial implementation.\n\n'
-                    'REQUIREMENTS:\n'
-                    '1. Must return a numpy array with SAME SHAPE as `bins`\n'
-                    '2. Always wrap code in try-except as shown in examples\n'
-                    '3. Never return None\n'
-                    '4. Handle non-numpy input properly\n\n'
-                    'USE THIS STRUCTURE:\n'
-                    'def priority(item, bins):\n'
-                    '    try:\n'
-                    '        # YOUR ALGORITHM HERE\n'
-                    '        return scores # Must be numpy array with same shape as bins\n'
-                    '    except Exception as e:\n'
-                    '        return np.full_like(bins, -1e9) if isinstance(bins, np.ndarray) else np.array([], dtype=float)'
-                )
-            else:
-                header_docstring = 'Initial implementation.'
-            
-            header = dataclasses.replace(
-                base_function,
-                name=f'{self._function_to_evolve}_v0',
-                body='',
-                docstring=header_docstring,
-            )
-            versioned_functions.append(header)
-        
-        else:
-            # 处理现有的实现
-            for i, implementation in enumerate(implementations):
-                new_function_name = f'{self._function_to_evolve}_v{i}'
-                implementation.name = new_function_name
-                # 更新`_v0`之后的所有后续函数的文档字符串
-                if i >= 1:
-                    implementation.docstring = (
-                        f'Improved version of `{self._function_to_evolve}_v{i - 1}`.')
-                # 如果函数是递归的，将对自身的调用替换为其新名称
-                implementation = code_manipulation.rename_function_calls(
-                    str(implementation), self._function_to_evolve, new_function_name)
-                versioned_functions.append(
-                    code_manipulation.text_to_function(implementation))
-
-            # 添加一个额外的"演示版本" (仅适用于priority函数)
-            # 检查是否是处理priority函数
-            if self._function_to_evolve == "priority":
-                try:
-                    # 使用小数版本号，避免与真实版本冲突
-                    demo_version = len(implementations) - 0.5
-                    demo_name = f'{self._function_to_evolve}_v{demo_version}'
-                    
-                    # 创建演示函数
-                    demo_function = code_manipulation.Function(
-                        name=demo_name,
-                        args=implementations[-1].args,  # 使用相同参数
-                        body="""    # DEMONSTRATION: This shows correct structure with proper error handling
-        try:
-            # 1. Input validation and conversion
-            if not isinstance(bins, np.ndarray):
-                bins = np.array(bins, dtype=float)
-                
-            # 2. Calculate scores using a strategy better than Best-Fit
-            # This is just an example - create your own smart strategy
-            remaining_space = bins - item
-            bin_capacity = np.max(bins) + item  # Estimate original capacity
-            fullness_ratio = 1 - (remaining_space / bin_capacity)
-            
-            # Apply weight to remaining space based on bin fullness
-            # Higher score = better choice
-            scores = fullness_ratio * 10 - remaining_space
-            
-            # 3. Handle edge cases and ensure clean return
-            # Replace any NaN/inf with very negative value
-            return np.nan_to_num(scores, nan=-1e9, posinf=-1e9, neginf=-1e9)
-        except Exception as e:
-            # Always include this safe fallback
-            return np.full_like(bins, -1e9) if isinstance(bins, np.ndarray) else np.array([], dtype=float)
-        """,
-                        docstring="Demonstration of correct code structure with advanced bin packing strategy.",
-                        return_type=implementations[-1].return_type if hasattr(implementations[-1], 'return_type') else None,
-                    )
-                    
-                    # 插入演示函数到版本列表
-                    versioned_functions.append(demo_function)
-                except Exception as e:
-                    # 如果添加演示代码失败，记录错误但继续
-                    logging.warning(f"Failed to add demonstration code: {e}")
-
-        # 创建下一个版本的函数头部
-        next_version = len(implementations)
-        new_function_name = f'{self._function_to_evolve}_v{next_version}'
-        
-        # 获取基础函数作为模板
-        base_function = self._template.get_function(self._function_to_evolve)
-        
-        # 针对priority函数添加特殊的文档字符串和指导
-        if self._function_to_evolve == "priority":
-            header_docstring = (
-                'Improved version of '
-                f'`{self._function_to_evolve}_v{next_version - 1 if next_version > 0 else 0}`.\n\n'
-                'REQUIREMENTS:\n'
-                '1. Must return a numpy array with SAME SHAPE as `bins`\n'
-                '2. Always wrap code in try-except as shown in examples\n'
-                '3. Never return None\n'
-                '4. Handle non-numpy input properly\n\n'
-                'USE THIS STRUCTURE:\n'
-                'def priority(item, bins):\n'
-                '    try:\n'
-                '        # YOUR IMPROVED ALGORITHM HERE\n'
-                '        return scores # Must be numpy array with same shape as bins\n'
-                '    except Exception as e:\n'
-                '        return np.full_like(bins, -1e9) if isinstance(bins, np.ndarray) else np.array([], dtype=float)'
-            )
-        else:
-            # 对于非priority函数，使用默认文档字符串
-            header_docstring = (
-                'Improved version of '
-                f'`{self._function_to_evolve}_v{next_version - 1 if next_version > 0 else 0}`.'
-            )
-        
-=======
         for i, implementation in enumerate(implementations):
             new_function_name = f'{self._function_to_evolve}_v{i}'
             implementation.name = new_function_name
@@ -463,9 +336,8 @@ class Island:
         # Create the header of the function to be generated by the LLM.
         next_version = len(implementations)
         new_function_name = f'{self._function_to_evolve}_v{next_version}'
->>>>>>> parent of bbfd8e3 (在程序数据库中为优先级函数添加演示版本和特殊文档字符串，改进提示生成逻辑。)
         header = dataclasses.replace(
-            base_function,
+            self._template.get_function(self._function_to_evolve),
             name=new_function_name,
             body='',
             docstring=('Improved version of '
@@ -504,25 +376,11 @@ class Cluster:
         return np.random.choice(self._programs, p=probabilities)
 
 def get_best_program_for_island(self, island_id: int) -> code_manipulation.Function | None:
-    """
-    获取指定岛屿当前记录的最佳程序 (Function 对象)。
-    Returns the best program (Function object) currently recorded for the specified island.
-
-    Args:
-        island_id (int): 岛屿的 ID。/ Island ID.
-
-    Returns:
-        code_manipulation.Function | None: 最佳 Function 对象，如果该岛屿无效或还没有记录则返回 None。
-                                          / The best Function object, or None if the island is invalid or has no record yet.
-    """
-    # 检查 island_id 是否有效 / Check if island_id is valid
-    if 0 <= island_id < len(self._best_program_per_island):
-        # 直接返回存储的 Function 对象 (它可能为 None)
-        # Directly return the stored Function object (it might be None)
-        return self._best_program_per_island[island_id]
-    else:
-        logging.warning(f"Attempted to get best program for invalid island_id: {island_id}")
-        return None # 返回 None 表示无效 ID / Return None for invalid ID
+    """Returns the best program found so far in the specified island."""
+    if not 0 <= island_id < len(self._islands):
+        logging.warning('Invalid island_id: %d', island_id)
+        return None
+    return self._best_program_per_island[island_id]
 
 @funsearch.evolve
 def priority(item: float, bins: np.ndarray) -> np.ndarray:
