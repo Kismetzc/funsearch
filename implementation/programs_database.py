@@ -310,7 +310,7 @@ class Island:
                 # 创建演示函数
                 demo_function = code_manipulation.Function(
                     name=demo_name,
-                    params=implementations[-1].args,  # 使用相同参数
+                    args=implementations[-1].args,  # 使用相同参数
                     body="""    # DEMONSTRATION: This shows correct structure with proper error handling
         try:
             # 1. Input validation and conversion
