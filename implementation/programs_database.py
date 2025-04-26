@@ -40,9 +40,6 @@ ScoresPerTest = Mapping[Any, float]
 
 def _softmax(logits: np.ndarray, temperature: float) -> np.ndarray:
     """Returns the tempered softmax of 1D finite `logits`."""
-    if len(logits) == 0:
-        raise ValueError('Cannot compute softmax on empty array')
-        
     if not np.all(np.isfinite(logits)):
         non_finites = set(logits[~np.isfinite(logits)])
         raise ValueError(f'`logits` contains non-finite value(s): {non_finites}')
@@ -177,44 +174,20 @@ class ProgramsDatabase:
             **kwargs  # RZ: add this for profiling
     ) -> None:
         """Registers `program` in the database."""
-        try:
-            # In an asynchronous implementation we should consider the possibility of
-            # registering a program on an island that had been reset after the prompt
-            # was generated. Leaving that out here for simplicity.
-            if island_id is None:
-                # This is a program added at the beginning, so adding it to all islands.
-                logging.info("Registering initial seed program to all islands")
-                for island_id in range(len(self._islands)):
-                    try:
-                        self._register_program_in_island(program, island_id, scores_per_test, **kwargs)
-                        logging.debug(f"Successfully registered seed program to island {island_id}")
-                    except Exception as e:
-                        logging.error(f"Failed to register seed program to island {island_id}: {str(e)}")
-                        raise
-            else:
+        # In an asynchronous implementation we should consider the possibility of
+        # registering a program on an island that had been reset after the prompt
+        # was generated. Leaving that out here for simplicity.
+        if island_id is None:
+            # This is a program added at the beginning, so adding it to all islands.
+            for island_id in range(len(self._islands)):
                 self._register_program_in_island(program, island_id, scores_per_test, **kwargs)
+        else:
+            self._register_program_in_island(program, island_id, scores_per_test, **kwargs)
 
-            # Check whether it is time to reset an island.
-            if time.time() - self._last_reset_time > self._config.reset_period:
-                self._last_reset_time = time.time()
-                self.reset_islands()
-            
-            # 验证注册是否成功
-            if island_id is None:
-                # 检查所有岛屿是否都有程序
-                for i, island in enumerate(self._islands):
-                    if not island._clusters:
-                        logging.error(f"Island {i} has no clusters after registration")
-                        raise ValueError(f"Failed to register program in island {i}")
-            else:
-                # 检查特定岛屿
-                if not self._islands[island_id]._clusters:
-                    logging.error(f"Island {island_id} has no clusters after registration")
-                    raise ValueError(f"Failed to register program in island {island_id}")
-                
-        except Exception as e:
-            logging.error(f"Error during program registration: {str(e)}", exc_info=True)
-            raise  # Re-raise the exception after logging
+        # Check whether it is time to reset an island.
+        if time.time() - self._last_reset_time > self._config.reset_period:
+            self._last_reset_time = time.time()
+            self.reset_islands()
 
     def reset_islands(self) -> None:
         """Resets the weaker half of islands."""
@@ -277,13 +250,6 @@ class Island:
     def get_prompt(self) -> tuple[str, int]:
         """Constructs a prompt containing functions from this island."""
         signatures = list(self._clusters.keys())
-        
-        # 添加空集群检查，返回基于模板的空提示
-        if not signatures:
-            logging.warning("No clusters available in island. Using template-based empty prompt.")
-            empty_prompt = self._generate_prompt([])  # 使用空实现列表生成提示
-            return empty_prompt, 1  # 返回基于模板的空提示和版本号1
-        
         cluster_scores = np.array(
             [self._clusters[signature].score for signature in signatures])
 
@@ -315,37 +281,108 @@ class Island:
     def _generate_prompt(
             self,
             implementations: Sequence[code_manipulation.Function]) -> str:
-        """Creates a prompt containing a sequence of function `implementations`."""
-        implementations = copy.deepcopy(implementations)  # We will mutate these.
+        """创建一个包含适当结构和指导的提示。"""
+        implementations = copy.deepcopy(implementations)  # 我们将修改这些实现
 
-        # Format the names and docstrings of functions to be included in the prompt.
+        # 格式化要包含在提示中的函数的名称和文档字符串
         versioned_functions: list[code_manipulation.Function] = []
         for i, implementation in enumerate(implementations):
             new_function_name = f'{self._function_to_evolve}_v{i}'
             implementation.name = new_function_name
-            # Update the docstring for all subsequent functions after `_v0`.
+            # 更新`_v0`之后的所有后续函数的文档字符串
             if i >= 1:
                 implementation.docstring = (
                     f'Improved version of `{self._function_to_evolve}_v{i - 1}`.')
-            # If the function is recursive, replace calls to itself with its new name.
+            # 如果函数是递归的，将对自身的调用替换为其新名称
             implementation = code_manipulation.rename_function_calls(
                 str(implementation), self._function_to_evolve, new_function_name)
             versioned_functions.append(
                 code_manipulation.text_to_function(implementation))
 
-        # Create the header of the function to be generated by the LLM.
+        # 添加一个额外的"演示版本" (仅适用于priority函数)
+        # 检查是否是处理priority函数
+        if self._function_to_evolve == "priority" and len(implementations) > 0:
+            try:
+                # 使用小数版本号，避免与真实版本冲突
+                demo_version = len(implementations) - 0.5
+                demo_name = f'{self._function_to_evolve}_v{demo_version}'
+                
+                # 创建演示函数
+                demo_function = code_manipulation.Function(
+                    name=demo_name,
+                    params=implementations[-1].params,  # 使用相同参数
+                    body="""    # DEMONSTRATION: This shows correct structure with proper error handling
+        try:
+            # 1. Input validation and conversion
+            if not isinstance(bins, np.ndarray):
+                bins = np.array(bins, dtype=float)
+                
+            # 2. Calculate scores using a strategy better than Best-Fit
+            # This is just an example - create your own smart strategy
+            remaining_space = bins - item
+            bin_capacity = np.max(bins) + item  # Estimate original capacity
+            fullness_ratio = 1 - (remaining_space / bin_capacity)
+            
+            # Apply weight to remaining space based on bin fullness
+            # Higher score = better choice
+            scores = fullness_ratio * 10 - remaining_space
+            
+            # 3. Handle edge cases and ensure clean return
+            # Replace any NaN/inf with very negative value
+            return np.nan_to_num(scores, nan=-1e9, posinf=-1e9, neginf=-1e9)
+        except Exception as e:
+            # Always include this safe fallback
+            return np.full_like(bins, -1e9) if isinstance(bins, np.ndarray) else np.array([], dtype=float)
+        """,
+                    docstring="Demonstration of correct code structure with advanced bin packing strategy.",
+                    return_type=implementations[-1].return_type if hasattr(implementations[-1], 'return_type') else None,
+                )
+                
+                # 插入演示函数到版本列表 (在最后一个函数之前)
+                versioned_functions.append(demo_function)
+            except Exception as e:
+                # 如果添加演示代码失败，记录错误但继续
+                logging.warning(f"Failed to add demonstration code: {e}")
+                # 不要中断正常流程，继续执行
+
+        # 创建由LLM生成的函数的头部
         next_version = len(implementations)
         new_function_name = f'{self._function_to_evolve}_v{next_version}'
+        
+        # 针对priority函数添加特殊的文档字符串和指导
+        if self._function_to_evolve == "priority":
+            header_docstring = (
+                'Improved version of '
+                f'`{self._function_to_evolve}_v{next_version - 1}`.\n\n'
+                'REQUIREMENTS:\n'
+                '1. Must return a numpy array with SAME SHAPE as `bins`\n'
+                '2. Always wrap code in try-except as shown in examples\n'
+                '3. Never return None\n'
+                '4. Handle non-numpy input properly\n\n'
+                'USE THIS STRUCTURE:\n'
+                'def priority(item, bins):\n'
+                '    try:\n'
+                '        # YOUR IMPROVED ALGORITHM HERE\n'
+                '        return scores # Must be numpy array with same shape as bins\n'
+                '    except Exception as e:\n'
+                '        return np.full_like(bins, -1e9) if isinstance(bins, np.ndarray) else np.array([], dtype=float)'
+            )
+        else:
+            # 对于非priority函数，使用默认文档字符串
+            header_docstring = (
+                'Improved version of '
+                f'`{self._function_to_evolve}_v{next_version - 1}`.'
+            )
+        
         header = dataclasses.replace(
-            self._template.get_function(self._function_to_evolve),
+            implementations[-1],
             name=new_function_name,
             body='',
-            docstring=('Improved version of '
-                       f'`{self._function_to_evolve}_v{next_version - 1}`.'),
+            docstring=header_docstring,
         )
         versioned_functions.append(header)
 
-        # Replace functions in the template with the list constructed here.
+        # 用这里构造的列表替换模板中的函数
         prompt = dataclasses.replace(self._template, functions=versioned_functions)
         return str(prompt)
 
@@ -374,38 +411,3 @@ class Cluster:
                 max(self._lengths) + 1e-6)
         probabilities = _softmax(-normalized_lengths, temperature=1.0)
         return np.random.choice(self._programs, p=probabilities)
-
-def get_best_program_for_island(self, island_id: int) -> code_manipulation.Function | None:
-    """Returns the best program found so far in the specified island."""
-    if not 0 <= island_id < len(self._islands):
-        logging.warning('Invalid island_id: %d', island_id)
-        return None
-    return self._best_program_per_island[island_id]
-
-@funsearch.evolve
-def priority(item: float, bins: np.ndarray) -> np.ndarray:
-    """Returns priority with which we want to add item to each bin.
-
-    Args:
-        item: Size of item to be added to the bin.
-        bins: Array of capacities for each bin.
-
-    Return:
-        Array of same size as bins with priority score of each bin.
-    """
-    try:
-        # Convert input if needed
-        if not isinstance(bins, np.ndarray):
-            bins = np.array(bins, dtype=float)
-            
-        # Calculate remaining space (Best Fit strategy)
-        remaining_space = bins - item
-        
-        # Create scores (negative remaining space = Best Fit heuristic)
-        scores = -remaining_space
-        
-        # Handle any NaN/inf values
-        return np.nan_to_num(scores, nan=-1e9, posinf=-1e9, neginf=-1e9)
-    except Exception as e:
-        # Safe fallback that maintains shape
-        return np.full_like(bins, -1e9, dtype=float) if isinstance(bins, np.ndarray) else np.array([], dtype=float)
