@@ -411,3 +411,24 @@ class Cluster:
                 max(self._lengths) + 1e-6)
         probabilities = _softmax(-normalized_lengths, temperature=1.0)
         return np.random.choice(self._programs, p=probabilities)
+
+def get_best_program_for_island(self, island_id: int) -> code_manipulation.Function | None:
+    """
+    获取指定岛屿当前记录的最佳程序 (Function 对象)。
+    Returns the best program (Function object) currently recorded for the specified island.
+
+    Args:
+        island_id (int): 岛屿的 ID。/ Island ID.
+
+    Returns:
+        code_manipulation.Function | None: 最佳 Function 对象，如果该岛屿无效或还没有记录则返回 None。
+                                          / The best Function object, or None if the island is invalid or has no record yet.
+    """
+    # 检查 island_id 是否有效 / Check if island_id is valid
+    if 0 <= island_id < len(self._best_program_per_island):
+        # 直接返回存储的 Function 对象 (它可能为 None)
+        # Directly return the stored Function object (it might be None)
+        return self._best_program_per_island[island_id]
+    else:
+        logging.warning(f"Attempted to get best program for invalid island_id: {island_id}")
+        return None # 返回 None 表示无效 ID / Return None for invalid ID
