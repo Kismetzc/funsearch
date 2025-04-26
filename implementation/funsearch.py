@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Tuple, Sequence, Optional, Dict # Added Optional, Dict
+from typing import Any, Tuple, Sequence, Optional, Dict, Mapping  # Added Optional, Dict
 from collections.abc import Mapping 
 
 # FunSearch implementation modules - adjust paths if needed
