@@ -3,5 +3,3 @@ __pycache__
 logs/
 .DS_Store
 .idea
-test.py
-my_changes.diff

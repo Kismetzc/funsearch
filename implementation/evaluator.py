@@ -23,7 +23,6 @@ from collections.abc import Sequence
 import copy
 from typing import Any, Type
 import profile
-import logging
 
 from implementation import code_manipulation
 from implementation import programs_database
@@ -177,71 +176,49 @@ class Evaluator:
                     no description before it (except annotations), no symbols before it.
                     Or the "_sample_to_program" function will fail!!!
         """
-        try:
-            logging.info(f"Starting analysis of {'initial seed' if island_id is None else f'sample from island {island_id}'}")
-            
-            # RZ: 'new_function' refers to the evolved function ('def' statement + function body)
-            # RZ: 'program' is the template code + new_function
-            new_function, program = _sample_to_program(
-                sample, version_generated, self._template, self._function_to_evolve)
-            logging.debug(f"Successfully compiled program with function: {new_function.name}")
-            
-            scores_per_test = {}
-            time_reset = time.time()
-            
-            for current_input in self._inputs:
-                # RZ: IMPORTANT !!! if self._inputs is a dict,
-                # current_input is a key (perhaps in string type)
-                # do not ignore this when implementing SandBox !!!
-                logging.debug(f"Testing input: {current_input}")
-                
-                test_output, runs_ok = self._sandbox.run(
-                    program, self._function_to_run, self._function_to_evolve, self._inputs, current_input,
-                    self._timeout_seconds
-                )
-                
-                if runs_ok:
-                    if not _calls_ancestor(program, self._function_to_evolve):
-                        if test_output is not None:
-                            if not isinstance(test_output, (int, float)):
-                                logging.error(f'Test output is not numeric: {test_output}')
-                                raise ValueError('@function.run did not return an int/float score.')
-                            scores_per_test[current_input] = test_output
-                            logging.debug(f"Test successful for {current_input}, score: {test_output}")
-                        else:
-                            logging.warning(f"Test output is None for {current_input}")
-                    else:
-                        logging.warning("Program calls ancestor version, skipping")
-                else:
-                    logging.warning(f"Test failed for {current_input}")
+        # RZ: 'new_function' refers to the evolved function ('def' statement + function body)
+        # RZ: 'program' is the template code + new_function
+        new_function, program = _sample_to_program(
+            sample, version_generated, self._template, self._function_to_evolve)
+        scores_per_test = {}
 
-            evaluate_time = time.time() - time_reset
-            logging.info(f"Evaluation completed in {evaluate_time:.2f}s with {len(scores_per_test)} successful tests")
+        time_reset = time.time()
+        for current_input in self._inputs:
+            # RZ: IMPORTANT !!! if self._inputs is a dict,
+            # current_input is a key (perhaps in string type)
+            # do not ignore this when implementing SandBox !!!
 
-            # RZ: If 'score_per_test' is not empty, the score of the program will be recorded to the profiler by the 'register_program'.
-            # This is because the register_program will do reduction for a given Function score.
-            # If 'score_per_test' is empty, we record it to the profiler at once.
-            if scores_per_test:
-                logging.info("Registering program with scores")
-                self._database.register_program(
-                    new_function,
-                    island_id,
-                    scores_per_test,
-                    **kwargs,
-                    evaluate_time=evaluate_time
-                )
-            else:
-                logging.warning("No successful test results to register")
-                profiler: profile.Profiler = kwargs.get('profiler', None)
-                if profiler:
-                    global_sample_nums = kwargs.get('global_sample_nums', None)
-                    sample_time = kwargs.get('sample_time', None)
-                    new_function.global_sample_nums = global_sample_nums
-                    new_function.score = None
-                    new_function.sample_time = sample_time
-                    new_function.evaluate_time = evaluate_time
-                    profiler.register_function(new_function)
-                
-        except Exception as e:
-            logging.error(f"Error during analysis: {str(e)}", exc_info=True)
-            raise  # Re-raise the exception after logging
+            test_output, runs_ok = self._sandbox.run(
+                program, self._function_to_run, self._function_to_evolve, self._inputs, current_input,
+                self._timeout_seconds
+            )
+
+            if runs_ok and not _calls_ancestor(program, self._function_to_evolve) and test_output is not None:
+                if not isinstance(test_output, (int, float)):
+                    print(f'RZ=> Error: test_output is {test_output}')
+                    raise ValueError('@function.run did not return an int/float score.')
+                scores_per_test[current_input] = test_output
+
+        evaluate_time = time.time() - time_reset
+
+        # RZ: If 'score_per_test' is not empty, the score of the program will be recorded to the profiler by the 'register_program'.
+        # This is because the register_program will do reduction for a given Function score.
+        # If 'score_per_test' is empty, we record it to the profiler at once.
+        if scores_per_test:
+            self._database.register_program(
+                new_function,
+                island_id,
+                scores_per_test,
+                **kwargs,
+                evaluate_time=evaluate_time
+            )
+        else:
+            profiler: profile.Profiler = kwargs.get('profiler', None)
+            if profiler:
+                global_sample_nums = kwargs.get('global_sample_nums', None)
+                sample_time = kwargs.get('sample_time', None)
+                new_function.global_sample_nums = global_sample_nums
+                new_function.score = None
+                new_function.sample_time = sample_time
+                new_function.evaluate_time = evaluate_time
+                profiler.register_function(new_function)
