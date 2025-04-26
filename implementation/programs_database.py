@@ -40,6 +40,9 @@ ScoresPerTest = Mapping[Any, float]
 
 def _softmax(logits: np.ndarray, temperature: float) -> np.ndarray:
     """Returns the tempered softmax of 1D finite `logits`."""
+    if len(logits) == 0:
+        raise ValueError('Cannot compute softmax on empty array')
+        
     if not np.all(np.isfinite(logits)):
         non_finites = set(logits[~np.isfinite(logits)])
         raise ValueError(f'`logits` contains non-finite value(s): {non_finites}')
@@ -174,20 +177,44 @@ class ProgramsDatabase:
             **kwargs  # RZ: add this for profiling
     ) -> None:
         """Registers `program` in the database."""
-        # In an asynchronous implementation we should consider the possibility of
-        # registering a program on an island that had been reset after the prompt
-        # was generated. Leaving that out here for simplicity.
-        if island_id is None:
-            # This is a program added at the beginning, so adding it to all islands.
-            for island_id in range(len(self._islands)):
+        try:
+            # In an asynchronous implementation we should consider the possibility of
+            # registering a program on an island that had been reset after the prompt
+            # was generated. Leaving that out here for simplicity.
+            if island_id is None:
+                # This is a program added at the beginning, so adding it to all islands.
+                logging.info("Registering initial seed program to all islands")
+                for island_id in range(len(self._islands)):
+                    try:
+                        self._register_program_in_island(program, island_id, scores_per_test, **kwargs)
+                        logging.debug(f"Successfully registered seed program to island {island_id}")
+                    except Exception as e:
+                        logging.error(f"Failed to register seed program to island {island_id}: {str(e)}")
+                        raise
+            else:
                 self._register_program_in_island(program, island_id, scores_per_test, **kwargs)
-        else:
-            self._register_program_in_island(program, island_id, scores_per_test, **kwargs)
 
-        # Check whether it is time to reset an island.
-        if time.time() - self._last_reset_time > self._config.reset_period:
-            self._last_reset_time = time.time()
-            self.reset_islands()
+            # Check whether it is time to reset an island.
+            if time.time() - self._last_reset_time > self._config.reset_period:
+                self._last_reset_time = time.time()
+                self.reset_islands()
+            
+            # 验证注册是否成功
+            if island_id is None:
+                # 检查所有岛屿是否都有程序
+                for i, island in enumerate(self._islands):
+                    if not island._clusters:
+                        logging.error(f"Island {i} has no clusters after registration")
+                        raise ValueError(f"Failed to register program in island {i}")
+            else:
+                # 检查特定岛屿
+                if not self._islands[island_id]._clusters:
+                    logging.error(f"Island {island_id} has no clusters after registration")
+                    raise ValueError(f"Failed to register program in island {island_id}")
+                
+        except Exception as e:
+            logging.error(f"Error during program registration: {str(e)}", exc_info=True)
+            raise  # Re-raise the exception after logging
 
     def reset_islands(self) -> None:
         """Resets the weaker half of islands."""
@@ -250,6 +277,13 @@ class Island:
     def get_prompt(self) -> tuple[str, int]:
         """Constructs a prompt containing functions from this island."""
         signatures = list(self._clusters.keys())
+        
+        # 添加空集群检查，返回基于模板的空提示
+        if not signatures:
+            logging.warning("No clusters available in island. Using template-based empty prompt.")
+            empty_prompt = self._generate_prompt([])  # 使用空实现列表生成提示
+            return empty_prompt, 1  # 返回基于模板的空提示和版本号1
+        
         cluster_scores = np.array(
             [self._clusters[signature].score for signature in signatures])
 
